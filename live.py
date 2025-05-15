@@ -4,6 +4,7 @@ from pythonosc import udp_client
 import matplotlib.pyplot as plt
 from util import *
 from media import analyze_video
+from datetime import datetime
 
 osc_client = udp_client.SimpleUDPClient("127.0.0.1", 57120)
 
@@ -42,8 +43,8 @@ magnitude_lpf = 0.1
 expected_interval = 1
 average_interval = 1
 
-def update_pos(pos, fps):
-    pos_history.append(pos)
+def update_pos(right_hand, left_hand, fps):
+    pos_history.append(right_hand)
 
     if len(pos_history) == maxlen:
         vel = compute_velocity(pos_history[-2], pos_history[-1], 1 / fps)
@@ -58,6 +59,9 @@ def update_pos(pos, fps):
             acc_magnitude = (calculate_magnitude(vel_history[-1]) - calculate_magnitude(vel_history[-2]))
             #avg_velo = calculate_average_vector(vel_history)
             update_acceleration(acc, acc_magnitude, calculate_magnitude(vel))
+    
+    left_hand[1] = 1 - left_hand[1]
+    osc_client.send_message("/left_hand", left_hand)
 
 velo_lpf2 = 0.2
 
@@ -141,5 +145,6 @@ def plot_data():
 
 if __name__ == "__main__":
     last_beat_time = time.time()
-    analyze_video(update_pos, show_video=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    analyze_video(update_pos, show_video=True, output_filename=f"data/video{timestamp}.avi")
     plot_data()
