@@ -10,8 +10,8 @@ import matplotlib.pyplot as plt
 
 def plot_acceleration():
     plt.figure(figsize=(20, 10))
-    plt.plot(avg_accel_list, label='Average Acceleration')
-    plt.plot(accel_list, label='Acceleration')
+    plt.plot(accel_lpf2_list, label='Average Acceleration')
+    plt.plot(accel_lpf1_list, label='Acceleration')
     plt.plot(velo_list, label='Velocity')
     plt.scatter(beat_times, beats, label='Beats', color='black')
     for beat_time in beat_times:
@@ -20,7 +20,7 @@ def plot_acceleration():
     plt.axhline(y=beat_threshold, color='r', linestyle='--', label='Beat Threshold')
     plt.axhline(y=reset_threshold, color='g', linestyle='--', label='Reset Threshold')
     plt.axhline(y=vel_threshold, color='b', linestyle='--', label='Velocity Threshold')
-    plt.ylim(0, 35)
+    plt.ylim(0, 25)
 
     plt.xlabel('Sample')
     plt.ylabel('Acceleration Magnitude')
@@ -46,7 +46,7 @@ pose = mp_pose.Pose(
     min_tracking_confidence=0.5
 )
 
-cap = cv2.VideoCapture('/home/nikolaus/cloud/rubato/dirigieren - cut.mp4')
+cap = cv2.VideoCapture('/home/nikolaus/cloud/rubato/dirigieren.mp4')
 
 fps = cap.get(cv2.CAP_PROP_FPS)
 
@@ -95,18 +95,20 @@ def update_pos(pos):
             update_acceleration(acc, calculate_magnitude(vel))
 
 
-reset_threshold = 5  # 3 when using mp_hands
-beat_threshold = 5 # 10 when using mp_hands
+reset_threshold = 5
+beat_threshold = 5
 vel_threshold = 0.2
-maxlen = 100
+alpha1 = 0.8
+alpha2 = 0.1
 
+maxlen = 5
 pos_history = deque(maxlen=maxlen)
-vel_history = deque(maxlen=maxlen - 1)
-acc_history = deque(maxlen=maxlen - 2)
+vel_history = deque(maxlen=maxlen)
+acc_history = deque(maxlen=maxlen)
 time_history = deque(maxlen=maxlen)
 
-avg_accel_list = []
-accel_list = []
+accel_lpf1_list = []
+accel_lpf2_list = []
 velo_list = []
 beat_times = []
 beats = []
@@ -116,30 +118,41 @@ min_interval = 0.4  # Minimum time between beats (in seconds)
 MIN_TIME_DELTA = 0.001  # Minimum allowed time delta
 last_peak = 0
 
+accel_lpf1 = 0
+accel_lpf2 = 0
+
+def update_lpf(now, value, alpha):
+    new = alpha * value + (1 - alpha) * now
+    return now, new
+
+def avg(source):
+    return sum(calculate_magnitude(v) for v in source) / len(source)
 
 def update_acceleration(acc, velo):
-    global last_beat_time, last_peak
-    magnitude_before = calculate_magnitude(acc_history[-1])
-    avg_accel_before = sum(calculate_magnitude(accel) for accel in acc_history) / len(acc_history)
+    global last_beat_time, last_peak, accel_lpf1, accel_lpf2
     acc_history.append(acc)
-    avg_accel = sum(calculate_magnitude(accel) for accel in acc_history) / len(acc_history)
-    quicker_avg = sum(calculate_magnitude(accel) for accel in list(acc_history)[-10:]) / 10
     magnitude = calculate_magnitude(acc)
-    avg_accel_list.append(min(avg_accel, 50))
-    accel_list.append(quicker_avg)
-    if quicker_avg <= reset_threshold:
+    avg_accel = avg(acc_history)
+    (accel_lpf_before1, accel_lpf1) = update_lpf(accel_lpf1, avg_accel, alpha1)
+    (accel_lpf_before2, accel_lpf2) = update_lpf(accel_lpf2, avg_accel, alpha2)
+    accel_lpf1_list.append(accel_lpf1)
+    accel_lpf2_list.append(accel_lpf2)
+
+    if accel_lpf1 <= reset_threshold:
         if last_peak != 0:
             last_peak = 0
             print("reset")
-    if quicker_avg >= beat_threshold and avg_accel >= 5 and avg_accel < avg_accel_before:
+    if accel_lpf1 >= beat_threshold and beat_threshold <= accel_lpf2 < accel_lpf_before2:
         if last_peak != 0:
+            print("not reset yet")
             return
-        if velo >= vel_threshold: return
+        if velo >= vel_threshold:
+            print(f"{velo:.2f} > {vel_threshold:.2f}")
+            return
         if time.time() - last_beat_time <= min_interval:
             return
         last_peak = magnitude
-        print(f"before: {avg_accel_before:.2f}, after: {avg_accel:.2f}, magnitude: {magnitude:.2f}, velo: {velo:.2f}")
-        detected_beat(quicker_avg, velo)
+        detected_beat(magnitude, velo)
 
 
 def calculate_average_point(points) -> list[float]:
@@ -152,8 +165,8 @@ def calculate_average_point(points) -> list[float]:
 def detected_beat(magnitude, vel_magn):
     global last_beat_time
     beats.append(min(magnitude, 35))
-    beat_times.append(len(avg_accel_list))
-    # print(f"Beat at {time.time():.2f}s: magnitude = {magnitude:.2f}, velo = {vel_magn:.2f}")
+    beat_times.append(len(accel_lpf1_list))
+    print(f"Beat at {time.time():.2f}s: magnitude = {magnitude:.2f}, velo = {vel_magn:.2f}")
     osc_client.send_message("/beat", magnitude)
     last_beat_time = time.time()
 
@@ -171,6 +184,7 @@ while cap.isOpened():
     if not success:
         break
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (640, 360))
     results = pose.process(image)
 
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -181,7 +195,7 @@ while cap.isOpened():
     #         if results.multi_handedness[i].classification[0].label == "Left":
     #             mp_drawing.draw_landmarks(overlay, hand_landmarks, mp_hands.HAND_CONNECTIONS)
     #
-    #             avg_point = calculate_average_point(hand_landmarks)
+    #             avg_point = calculate_average_point(hand_landmarks.landmark)
     #             update_pos(avg_point)
     # else :
     #     print("No hands detected")
