@@ -8,9 +8,8 @@ from media import analyze_video
 osc_client = udp_client.SimpleUDPClient("127.0.0.1", 57120)
 
 # Constants
-alpha1 = 0.8
-alpha2 = 0.25
-alpha3 = 0.01
+ALPHA1 = 0.25
+ALPHA2 = 0.05
 min_interval = 0.4
 
 maxlen = 3
@@ -33,6 +32,8 @@ last_beat_time = 0
 peak_velo = 0
 accel_lpf = 0
 accel_threshold = 5
+next_expected_beat = 0
+
 
 def update_pos(pos, fps):
     pos_history.append(pos)
@@ -49,18 +50,19 @@ def update_pos(pos, fps):
                 return
             update_acceleration(acc, calculate_magnitude(vel))
 
+
 def update_acceleration(acc, velo):
     global last_beat_time, peak_velo, accel_lpf, accel_threshold, velo_lpf
     acc_history.append(acc)
     avg_accel = avg_magnitude(acc_history)
 
     accel_lpf_before = accel_lpf
-    accel_lpf = update_lpf(accel_lpf, avg_accel, alpha2)
-    accel_threshold = update_lpf(accel_threshold, avg_accel, alpha3)
+    accel_lpf = update_lpf(accel_lpf, avg_accel, ALPHA1)
+    accel_threshold = update_lpf(accel_threshold, avg_accel, ALPHA2)
 
     avg_velo = avg_magnitude(vel_history)
     velo_threshold = max(velo_lpf / 1, 0.1)
-    velo_lpf = update_lpf(velo_lpf, velo, alpha3)
+    velo_lpf = update_lpf(velo_lpf, velo, ALPHA2)
 
     accel_lpf_list.append(accel_lpf)
     threshold_list.append(accel_threshold)
@@ -71,16 +73,12 @@ def update_acceleration(acc, velo):
 
     if avg_velo > peak_velo:  peak_velo = avg_velo
 
-    if accel_lpf >= accel_threshold and calculate_magnitude(acc) < accel_lpf_before:
-        if velo >= peak_velo / 3:
-            print(f"{velo:.2f} > {peak_velo / 2.5:.2f}")
-            return
-        if velo >= velo_threshold:
-            print(f"{velo:.2f} > {velo_threshold:.2f}")
-            return
-        peak_velo = 0
-        detected_beat(accel_lpf, velo)
+    if accel_lpf < accel_threshold: return
+    if calculate_magnitude(acc) >= accel_lpf_before: return
+    if velo >= min(velo_threshold, peak_velo / 3): return
 
+    detected_beat(accel_lpf, velo)
+    peak_velo = 0
 
 
 def detected_beat(magnitude, vel_magn):
@@ -94,8 +92,8 @@ def detected_beat(magnitude, vel_magn):
 def plot_data():
     # Plotting
     plt.figure(figsize=(20, 10))
-    plt.plot(accel_lpf_list, label=f"Acceleration (alpha={alpha2})")
-    plt.plot(threshold_list, label=f"Acceleration Threshold (alpha={alpha3})")
+    plt.plot(accel_lpf_list, label=f"Acceleration (alpha={ALPHA1})")
+    plt.plot(threshold_list, label=f"Acceleration Threshold (alpha={ALPHA2})")
     plt.plot(velo_list, label='Velocity')
     plt.plot(peak_velo_list, label='Peak Velocity')
     plt.plot(velo_threshold_list, label='Velocity Threshold')
@@ -109,7 +107,7 @@ def plot_data():
     plt.legend()
     plt.show()
 
+
 if __name__ == "__main__":
     analyze_video(update_pos, show_video=True)
     plot_data()
-
