@@ -1,21 +1,25 @@
 import cv2
 import mediapipe as mp
 import time
-from collections import deque, namedtuple
+from collections import deque
+from mediapipe.python.solutions.drawing_utils import DrawingSpec
 from pythonosc import udp_client
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def plot_acceleration():
     plt.figure(figsize=(20, 10))
+    plt.plot(avg_accel_list, label='Average Acceleration')
     plt.plot(accel_list, label='Acceleration')
     plt.plot(velo_list, label='Velocity')
-    plt.scatter(beat_times, beats, label='Beats', color= 'black')
+    plt.scatter(beat_times, beats, label='Beats', color='black')
     for beat_time in beat_times:
         plt.axvline(x=beat_time, color='black', alpha=0.5, linestyle='--')
 
     plt.axhline(y=beat_threshold, color='r', linestyle='--', label='Beat Threshold')
     plt.axhline(y=reset_threshold, color='g', linestyle='--', label='Reset Threshold')
+    plt.axhline(y=vel_threshold, color='b', linestyle='--', label='Velocity Threshold')
     plt.ylim(0, 35)
 
     plt.xlabel('Sample')
@@ -46,22 +50,6 @@ cap = cv2.VideoCapture('/home/nikolaus/cloud/rubato/dirigieren - cut.mp4')
 
 fps = cap.get(cv2.CAP_PROP_FPS)
 
-maxlen = 5
-pos_history = deque(maxlen=maxlen)
-vel_history = deque(maxlen=maxlen - 1)
-acc_history = deque(maxlen=maxlen - 2)
-time_history = deque(maxlen=maxlen)
-
-accel_list = []
-velo_list = []
-beat_times = []
-beats = []
-
-last_beat_time = 0
-min_interval = 0.4  # Minimum time between beats (in seconds)
-MIN_TIME_DELTA = 0.001  # Minimum allowed time delta
-last_peak = 0
-
 def compute_velocity(pos1, pos2, time_delta):
     if abs(time_delta) < MIN_TIME_DELTA:
         return [0.0, 0.0]
@@ -76,6 +64,7 @@ def compute_acceleration(vel1, vel2, time_delta):
 
 def calculate_magnitude(vector):
     return (vector[0] ** 2 + vector[1] ** 2) ** 0.5
+
 
 def update_pos(pos):
     global last_beat_time
@@ -106,29 +95,51 @@ def update_pos(pos):
             update_acceleration(acc, calculate_magnitude(vel))
 
 
-reset_threshold = 5 # 3 when using mp_hands
-beat_threshold = 20 # 10 when using mp_hands
-vel_threshold = 10
+reset_threshold = 5  # 3 when using mp_hands
+beat_threshold = 5 # 10 when using mp_hands
+vel_threshold = 0.2
+maxlen = 100
+
+pos_history = deque(maxlen=maxlen)
+vel_history = deque(maxlen=maxlen - 1)
+acc_history = deque(maxlen=maxlen - 2)
+time_history = deque(maxlen=maxlen)
+
+avg_accel_list = []
+accel_list = []
+velo_list = []
+beat_times = []
+beats = []
+
+last_beat_time = 0
+min_interval = 0.4  # Minimum time between beats (in seconds)
+MIN_TIME_DELTA = 0.001  # Minimum allowed time delta
+last_peak = 0
+
 
 def update_acceleration(acc, velo):
     global last_beat_time, last_peak
-    # avg_magn_before = sum(calculate_magnitude(accel) for accel in acc_history) / len(acc_history)
+    magnitude_before = calculate_magnitude(acc_history[-1])
+    avg_accel_before = sum(calculate_magnitude(accel) for accel in acc_history) / len(acc_history)
     acc_history.append(acc)
     avg_accel = sum(calculate_magnitude(accel) for accel in acc_history) / len(acc_history)
+    quicker_avg = sum(calculate_magnitude(accel) for accel in list(acc_history)[-10:]) / 10
     magnitude = calculate_magnitude(acc)
-    accel_list.append(min(magnitude, 50))
-    if avg_accel <= reset_threshold:
+    avg_accel_list.append(min(avg_accel, 50))
+    accel_list.append(quicker_avg)
+    if quicker_avg <= reset_threshold:
         if last_peak != 0:
             last_peak = 0
             print("reset")
-    if beat_threshold <= magnitude:
+    if quicker_avg >= beat_threshold and avg_accel >= 5 and avg_accel < avg_accel_before:
         if last_peak != 0:
             return
         if velo >= vel_threshold: return
         if time.time() - last_beat_time <= min_interval:
             return
         last_peak = magnitude
-        detected_beat(magnitude, velo)
+        print(f"before: {avg_accel_before:.2f}, after: {avg_accel:.2f}, magnitude: {magnitude:.2f}, velo: {velo:.2f}")
+        detected_beat(quicker_avg, velo)
 
 
 def calculate_average_point(points) -> list[float]:
@@ -141,10 +152,18 @@ def calculate_average_point(points) -> list[float]:
 def detected_beat(magnitude, vel_magn):
     global last_beat_time
     beats.append(min(magnitude, 35))
-    beat_times.append(len(accel_list))
-    print(f"Beat at {time.time():.2f}s: magnitude = {magnitude:.2f}, velo = {vel_magn:.2f}")
+    beat_times.append(len(avg_accel_list))
+    # print(f"Beat at {time.time():.2f}s: magnitude = {magnitude:.2f}, velo = {vel_magn:.2f}")
     osc_client.send_message("/beat", magnitude)
     last_beat_time = time.time()
+
+
+def draw_circle(target, point, radius, color):
+    h, w, _ = target.shape
+    px = int(point[0] * w)
+    py = int(point[1] * h)
+
+    cv2.circle(target, (px, py), radius, color, thickness=-1)
 
 
 while cap.isOpened():
@@ -167,16 +186,12 @@ while cap.isOpened():
     # else :
     #     print("No hands detected")
     if results.pose_landmarks:
-        landmarks = results.pose_landmarks.landmark
-        right_hand = calculate_average_point(landmarks[16:22:2])
-        # Convert normalized coordinates to pixel coordinates
-        h, w, _ = image.shape
-        px = int(right_hand[0] * w)
-        py = int(right_hand[1] * h)
-        # Draw circle at right hand position
-        cv2.circle(overlay, (px, py), 10, (0, 255, 0), -1)
-
+        landmarks = results.pose_landmarks
+        right_hand = calculate_average_point(landmarks.landmark[16:22:2])
         update_pos(right_hand)
+
+        mp_drawing.draw_landmarks(overlay, landmarks, mp_pose.POSE_CONNECTIONS, DrawingSpec((20, 20, 20), -1, 3))
+        draw_circle(overlay, right_hand, 5, color=(0, 255, 0))
 
     image = cv2.addWeighted(overlay, 1, image, 0.1, 0)
     cv2.imshow("Live", image)
