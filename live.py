@@ -9,9 +9,9 @@ osc_client = udp_client.SimpleUDPClient("127.0.0.1", 57120)
 
 # Constants
 ALPHA1 = 0.25
-ALPHA2 = 0.05
+ALPHA2 = 0.03
 TEMPO_ALPHA = 0.35
-MIN_CONFIDENCE = 1
+MIN_CONFIDENCE = 0.95
 CONFIDENCE_MULT = 10
 MIN_INTERVAL = 0.4
 PEAK_FACTOR = 0.25
@@ -56,12 +56,13 @@ def update_pos(pos, fps):
                 acc_history.append(acc)
                 return
             acc_magnitude = (calculate_magnitude(vel_history[-1]) - calculate_magnitude(vel_history[-2]))
-            avg_velo = calculate_average_vector(vel_history)
-            update_acceleration(acc, acc_magnitude, calculate_magnitude(avg_velo))
+            #avg_velo = calculate_average_vector(vel_history)
+            update_acceleration(acc, acc_magnitude, calculate_magnitude(vel))
 
+velo_lpf2 = 0.2
 
 def update_acceleration(acc, magnitude_acc, velo):
-    global last_beat_time, peak_velo, accel_lpf, accel_threshold, velo_lpf, average_interval, expected_interval, magnitude_lpf
+    global last_beat_time, peak_velo, accel_lpf, accel_threshold, velo_lpf, average_interval, expected_interval, magnitude_lpf, velo_lpf2
     acc_history.append(acc)
     avg_accel = avg_magnitude(acc_history)
 
@@ -72,6 +73,7 @@ def update_acceleration(acc, magnitude_acc, velo):
     avg_velo = avg_magnitude(vel_history)
     max_velo = min(velo_lpf, peak_velo * PEAK_FACTOR)
     velo_lpf = update_lpf(velo_lpf, velo, ALPHA2)
+    velo_lpf2 = update_lpf(velo_lpf2, velo, 0.5)
 
     accel_lpf_list.append(accel_lpf)
     threshold_list.append(accel_threshold)
@@ -88,14 +90,14 @@ def update_acceleration(acc, magnitude_acc, velo):
     if avg_velo > peak_velo: peak_velo = avg_velo
 
     confidence = 1
-    confidence *= asymmetric_sigmoid(interval / average_interval, k1=1, k2=0.1)
-    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=5, k2=0.2)
-    confidence *= asymmetric_sigmoid(1 - magnitude_lpf, k1=3, k2=1)
-    confidence *= asymmetric_sigmoid(max_velo / velo, k1=3, k2=3)
+    confidence *= asymmetric_sigmoid(interval / average_interval, k1=0.5, k2=0.25)
+    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=3, k2=1)
+    confidence *= asymmetric_sigmoid(1 - magnitude_lpf, k1=2, k2=7)
+    confidence *= asymmetric_sigmoid(max_velo / velo_lpf2, k1=3, k2=3)
     confidence_list.append(confidence * CONFIDENCE_MULT)
 
     if confidence >= MIN_CONFIDENCE:
-        detected_beat(accel_lpf, velo)
+        detected_beat(accel_lpf, velo_lpf2)
         last_beat_time = current_time
         average_interval = update_lpf(average_interval, interval, TEMPO_ALPHA)
         peak_velo = 0
