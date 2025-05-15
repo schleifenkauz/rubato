@@ -4,7 +4,6 @@ from pythonosc import udp_client
 import matplotlib.pyplot as plt
 from util import *
 from media import analyze_video
-from datetime import datetime
 
 osc_client = udp_client.SimpleUDPClient("127.0.0.1", 57120)
 
@@ -145,6 +144,5 @@ def plot_data():
 
 if __name__ == "__main__":
     last_beat_time = time.time()
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    analyze_video(update_pos, show_video=True, output_filename=f"data/video{timestamp}.avi")
+    analyze_video(update_pos, show_video=True)
     plot_data()

@@ -1,7 +1,7 @@
 import cv2
 import mediapipe as mp
 from mediapipe.python.solutions.drawing_utils import DrawingSpec
-from local_config import get_video_source
+from local_config import get_video_source, output_file_name
 import numpy as np
 from util import calculate_average_point
 
@@ -21,12 +21,14 @@ pose = mp_pose.Pose(
     min_tracking_confidence=0.5
 )
 
-def analyze_video(analyze_frame, show_video, output_filename):
+def analyze_video(analyze_frame, show_video):
     cap = get_video_source()
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"Starting to analyze video. [{width} x ${height}] FPS: {fps}")
+
+    output_filename = get_output_file_name()
 
     if output_filename:
         fourcc = cv2.VideoWriter_fourcc(*'XVID')  
