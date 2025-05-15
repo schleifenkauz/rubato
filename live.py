@@ -7,19 +7,16 @@ from pythonosc import udp_client
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 def plot_acceleration():
     plt.figure(figsize=(20, 10))
     plt.plot(accel_lpf2_list, label='Average Acceleration')
     plt.plot(accel_lpf1_list, label='Acceleration')
+    plt.plot(threshold_list, label='Threshold')
     plt.plot(velo_list, label='Velocity')
     plt.scatter(beat_times, beats, label='Beats', color='black')
     for beat_time in beat_times:
         plt.axvline(x=beat_time, color='black', alpha=0.5, linestyle='--')
 
-    plt.axhline(y=beat_threshold, color='r', linestyle='--', label='Beat Threshold')
-    plt.axhline(y=reset_threshold, color='g', linestyle='--', label='Reset Threshold')
-    plt.axhline(y=vel_threshold, color='b', linestyle='--', label='Velocity Threshold')
     plt.ylim(0, 25)
 
     plt.xlabel('Sample')
@@ -46,7 +43,7 @@ pose = mp_pose.Pose(
     min_tracking_confidence=0.5
 )
 
-cap = cv2.VideoCapture('/home/nikolaus/cloud/rubato/dirigieren.mp4')
+cap = cv2.VideoCapture('/home/nikolaus/cloud/rubato/dirigieren - cut.mp4')
 
 fps = cap.get(cv2.CAP_PROP_FPS)
 
@@ -73,20 +70,16 @@ def update_pos(pos):
     pos_history.append(pos)
 
     if len(pos_history) == maxlen:
-        # Convert deque to list for slicing
         time_list = list(time_history)
-        # Calculate time deltas with safety check
         time_deltas = []
         for t1, t2 in zip(time_list[:-1], time_list[1:]):
             delta = t2 - t1
             time_deltas.append(max(delta, MIN_TIME_DELTA))
 
-        # Velocity: first derivative of position
         vel = compute_velocity(pos_history[-2], pos_history[-1], time_deltas[-1])
         vel_history.append(vel)
         velo_list.append(calculate_magnitude(vel))
 
-        # Acceleration: second derivative of position
         if len(vel_history) >= 2 and len(time_deltas) >= 2:
             acc = compute_acceleration(vel_history[-2], vel_history[-1], time_deltas[-2])
             if len(acc_history) < 3:
@@ -95,11 +88,10 @@ def update_pos(pos):
             update_acceleration(acc, calculate_magnitude(vel))
 
 
-reset_threshold = 5
-beat_threshold = 5
-vel_threshold = 0.2
+velo_lpf = 0.25
 alpha1 = 0.8
 alpha2 = 0.1
+alpha3 = 0.01
 
 maxlen = 5
 pos_history = deque(maxlen=maxlen)
@@ -109,6 +101,7 @@ time_history = deque(maxlen=maxlen)
 
 accel_lpf1_list = []
 accel_lpf2_list = []
+threshold_list = []
 velo_list = []
 beat_times = []
 beats = []
@@ -120,39 +113,47 @@ last_peak = 0
 
 accel_lpf1 = 0
 accel_lpf2 = 0
+threshold = 5
 
 def update_lpf(now, value, alpha):
-    new = alpha * value + (1 - alpha) * now
-    return now, new
+    return alpha * value + (1 - alpha) * now
 
 def avg(source):
     return sum(calculate_magnitude(v) for v in source) / len(source)
 
 def update_acceleration(acc, velo):
-    global last_beat_time, last_peak, accel_lpf1, accel_lpf2
+    global last_beat_time, last_peak, accel_lpf1, accel_lpf2, threshold, velo_lpf
     acc_history.append(acc)
-    magnitude = calculate_magnitude(acc)
     avg_accel = avg(acc_history)
-    (accel_lpf_before1, accel_lpf1) = update_lpf(accel_lpf1, avg_accel, alpha1)
-    (accel_lpf_before2, accel_lpf2) = update_lpf(accel_lpf2, avg_accel, alpha2)
+
+    accel_lpf1 = update_lpf(accel_lpf1, avg_accel, alpha1)
+    accel_lpf2_before = accel_lpf2
+    accel_lpf2 = update_lpf(accel_lpf2, avg_accel, alpha2)
+    threshold = update_lpf(threshold, avg_accel, alpha3)
+
+    velo_threshold = velo_lpf / 3
+    velo_lpf = update_lpf(velo_lpf, velo, alpha3)
+
     accel_lpf1_list.append(accel_lpf1)
     accel_lpf2_list.append(accel_lpf2)
+    threshold_list.append(threshold)
 
-    if accel_lpf1 <= reset_threshold:
+    if accel_lpf1 * 1.5 <= threshold:
         if last_peak != 0:
             last_peak = 0
             print("reset")
-    if accel_lpf1 >= beat_threshold and beat_threshold <= accel_lpf2 < accel_lpf_before2:
+    magnitude = calculate_magnitude(acc)
+    if accel_lpf1 * 1.5 >= threshold and magnitude < accel_lpf2_before:
         if last_peak != 0:
             print("not reset yet")
             return
-        if velo >= vel_threshold:
-            print(f"{velo:.2f} > {vel_threshold:.2f}")
+        if velo >= velo_threshold:
+            print(f"{velo:.2f} > {velo_threshold:.2f}")
             return
         if time.time() - last_beat_time <= min_interval:
             return
-        last_peak = magnitude
-        detected_beat(magnitude, velo)
+        last_peak = 1
+        detected_beat(avg_accel, velo)
 
 
 def calculate_average_point(points) -> list[float]:
