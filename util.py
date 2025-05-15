@@ -1,3 +1,5 @@
+import numpy as np
+
 MIN_TIME_DELTA = 0.001
 
 def compute_velocity(pos1, pos2, time_delta):
@@ -28,3 +30,10 @@ def calculate_average_point(points) -> list[float]:
     n = len(points)
     return [x_sum / n, y_sum / n]
 
+def scaled_sigmoid(x, k=5.0):
+    raw = 1 / (1 + np.exp(-k * (x - 1)))
+    return raw / (1 / (1 + np.exp(0)))  # Normalize so f(1) = 1
+
+def asymmetric_sigmoid(x, k1=5.0, k2=0.1):
+    if x < 1: return scaled_sigmoid(x, k1)
+    else: return scaled_sigmoid(x, k2)

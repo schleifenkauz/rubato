@@ -2,7 +2,7 @@ import time
 from collections import deque
 from pythonosc import udp_client
 import matplotlib.pyplot as plt
-from util import compute_velocity, compute_acceleration, calculate_magnitude, avg_magnitude, update_lpf
+from util import *
 from media import analyze_video
 
 osc_client = udp_client.SimpleUDPClient("127.0.0.1", 57120)
@@ -10,7 +10,11 @@ osc_client = udp_client.SimpleUDPClient("127.0.0.1", 57120)
 # Constants
 ALPHA1 = 0.25
 ALPHA2 = 0.05
-min_interval = 0.4
+TEMPO_ALPHA = 0.35
+MIN_CONFIDENCE = 1
+CONFIDENCE_MULT = 10
+MIN_INTERVAL = 0.4
+PEAK_FACTOR = 0.4
 
 maxlen = 3
 pos_history = deque(maxlen=maxlen)
@@ -22,9 +26,11 @@ accel_lpf_list = []
 threshold_list = []
 velo_list = []
 velo_threshold_list = []
+confidence_list = []
 peak_velo_list = []
 beat_times = []
 beats = []
+tempo_list = []
 
 # Global variables
 velo_lpf = 0.25
@@ -32,8 +38,8 @@ last_beat_time = 0
 peak_velo = 0
 accel_lpf = 0
 accel_threshold = 5
-next_expected_beat = 0
-
+expected_interval = 1
+average_interval = 1
 
 def update_pos(pos, fps):
     pos_history.append(pos)
@@ -52,7 +58,7 @@ def update_pos(pos, fps):
 
 
 def update_acceleration(acc, velo):
-    global last_beat_time, peak_velo, accel_lpf, accel_threshold, velo_lpf
+    global last_beat_time, peak_velo, accel_lpf, accel_threshold, velo_lpf, average_interval, expected_interval
     acc_history.append(acc)
     avg_accel = avg_magnitude(acc_history)
 
@@ -63,31 +69,42 @@ def update_acceleration(acc, velo):
     avg_velo = avg_magnitude(vel_history)
     velo_threshold = max(velo_lpf / 1, 0.1)
     velo_lpf = update_lpf(velo_lpf, velo, ALPHA2)
+    max_velo = min(velo_threshold, peak_velo * PEAK_FACTOR)
 
     accel_lpf_list.append(accel_lpf)
     threshold_list.append(accel_threshold)
-    velo_threshold_list.append(velo_lpf)
+    velo_threshold_list.append(max_velo)
     peak_velo_list.append(peak_velo)
+    tempo_list.append(60 / average_interval)
 
-    if time.time() - last_beat_time < min_interval: return
+    current_time = time.time()
+    interval = current_time - last_beat_time
+    if interval < MIN_INTERVAL:
+        confidence_list.append(0)
+        return
 
-    if avg_velo > peak_velo:  peak_velo = avg_velo
+    if avg_velo > peak_velo: peak_velo = avg_velo
 
-    if accel_lpf < accel_threshold: return
-    if calculate_magnitude(acc) >= accel_lpf_before: return
-    if velo >= min(velo_threshold, peak_velo / 3): return
+    confidence = 1
+    confidence *= asymmetric_sigmoid(interval / average_interval, k1=0.75, k2=0.05)
+    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=2, k2=0.3)
+    confidence *= asymmetric_sigmoid(accel_lpf_before / calculate_magnitude(acc), k1=1, k2=0.05)
+    confidence *= asymmetric_sigmoid(max_velo / velo, k1=6, k2=0.5)
+    confidence_list.append(confidence * CONFIDENCE_MULT)
 
-    detected_beat(accel_lpf, velo)
-    peak_velo = 0
+    if confidence >= MIN_CONFIDENCE:
+        detected_beat(accel_lpf, velo)
+        last_beat_time = current_time
+        average_interval = update_lpf(average_interval, interval, TEMPO_ALPHA)
+        peak_velo = 0
 
 
 def detected_beat(magnitude, vel_magn):
-    global last_beat_time
     beats.append(min(magnitude, 35))
     beat_times.append(len(peak_velo_list))
     print(f"Beat at {time.time():.2f}s: magnitude = {magnitude:.2f}, velo = {vel_magn:.2f}")
     osc_client.send_message("/beat", magnitude)
-    last_beat_time = time.time()
+
 
 def plot_data():
     # Plotting
@@ -97,6 +114,8 @@ def plot_data():
     plt.plot(velo_list, label='Velocity')
     plt.plot(peak_velo_list, label='Peak Velocity')
     plt.plot(velo_threshold_list, label='Velocity Threshold')
+    # plt.plot(confidence_list, label='Confidence', scaley=False)
+    # plt.axhline(y=MIN_CONFIDENCE * CONFIDENCE_MULT, color='red', linestyle='--', label='Minimum Confidence')
     # plt.scatter(beat_times, beats, label='Beats', color='black')
     for beat_time in beat_times:
         plt.axvline(x=beat_time, color='black', alpha=0.5, linestyle='--')
@@ -107,7 +126,16 @@ def plot_data():
     plt.legend()
     plt.show()
 
+    plt.figure(figsize=(20, 10))
+    plt.plot(tempo_list, label='Tempo')
+    plt.xlabel('Sample')
+    plt.ylabel('Tempo')
+    plt.title('Tempo Over Time')
+    plt.ylim(0, 120)
+    # plt.show()
+
 
 if __name__ == "__main__":
+    last_beat_time = time.time()
     analyze_video(update_pos, show_video=True)
     plot_data()
