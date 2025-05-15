@@ -14,7 +14,7 @@ TEMPO_ALPHA = 0.35
 MIN_CONFIDENCE = 1
 CONFIDENCE_MULT = 10
 MIN_INTERVAL = 0.4
-PEAK_FACTOR = 0.4
+PEAK_FACTOR = 0.25
 
 maxlen = 3
 pos_history = deque(maxlen=maxlen)
@@ -67,9 +67,8 @@ def update_acceleration(acc, velo):
     accel_threshold = update_lpf(accel_threshold, avg_accel, ALPHA2)
 
     avg_velo = avg_magnitude(vel_history)
-    velo_threshold = max(velo_lpf / 1, 0.1)
+    max_velo = min(velo_lpf, peak_velo * PEAK_FACTOR)
     velo_lpf = update_lpf(velo_lpf, velo, ALPHA2)
-    max_velo = min(velo_threshold, peak_velo * PEAK_FACTOR)
 
     accel_lpf_list.append(accel_lpf)
     threshold_list.append(accel_threshold)
@@ -86,10 +85,10 @@ def update_acceleration(acc, velo):
     if avg_velo > peak_velo: peak_velo = avg_velo
 
     confidence = 1
-    confidence *= asymmetric_sigmoid(interval / average_interval, k1=0.75, k2=0.05)
-    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=2, k2=0.3)
+    confidence *= asymmetric_sigmoid(interval / average_interval, k1=1.5, k2=0.1)
+    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=5, k2=0.5)
     confidence *= asymmetric_sigmoid(accel_lpf_before / calculate_magnitude(acc), k1=1, k2=0.05)
-    confidence *= asymmetric_sigmoid(max_velo / velo, k1=6, k2=0.5)
+    confidence *= asymmetric_sigmoid(max_velo / velo, k1=3, k2=0.25)
     confidence_list.append(confidence * CONFIDENCE_MULT)
 
     if confidence >= MIN_CONFIDENCE:
