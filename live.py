@@ -11,7 +11,7 @@ osc_client = udp_client.SimpleUDPClient("127.0.0.1", 57120)
 ALPHA1 = 0.25
 ALPHA2 = 0.03
 TEMPO_ALPHA = 0.35
-MIN_CONFIDENCE = 0.95
+MIN_CONFIDENCE = 0.9
 CONFIDENCE_MULT = 10
 MIN_INTERVAL = 0.4
 PEAK_FACTOR = 0.25
@@ -92,8 +92,8 @@ def update_acceleration(acc, magnitude_acc, velo):
     confidence = 1
     confidence *= asymmetric_sigmoid(interval / average_interval, k1=0.5, k2=0.25)
     confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=3, k2=1)
-    confidence *= asymmetric_sigmoid(1 - magnitude_lpf, k1=2, k2=7)
-    confidence *= asymmetric_sigmoid(max_velo / velo_lpf2, k1=3, k2=3)
+    confidence *= asymmetric_sigmoid(1 - magnitude_lpf, k1=2, k2=8)
+    confidence *= asymmetric_sigmoid(max_velo / velo_lpf2, k1=2, k2=3)
     confidence_list.append(confidence * CONFIDENCE_MULT)
 
     if confidence >= MIN_CONFIDENCE:
