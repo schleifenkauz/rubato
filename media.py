@@ -35,7 +35,6 @@ def analyze_video(analyze_frame, show_video):
 
         if show_video:
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-            overlay = np.zeros(image.shape, dtype=np.uint8)
 
         if results.pose_landmarks:
             landmarks = results.pose_landmarks
@@ -43,11 +42,10 @@ def analyze_video(analyze_frame, show_video):
             analyze_frame(right_hand, fps)
             if show_video:
                 spec = DrawingSpec((20, 20, 20), -1, 3)
-                mp_drawing.draw_landmarks(overlay, landmarks, mp_pose.POSE_CONNECTIONS, spec)
-                draw_circle(overlay, right_hand, 5, color=(0, 255, 0))
+                mp_drawing.draw_landmarks(image, landmarks, mp_pose.POSE_CONNECTIONS, spec)
+                draw_circle(image, right_hand, 5, color=(0, 255, 0))
 
         if show_video:
-            image = cv2.addWeighted(overlay, 1, image, 0.1, 0)
             cv2.imshow("Live", image)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break

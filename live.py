@@ -38,6 +38,7 @@ last_beat_time = 0
 peak_velo = 0
 accel_lpf = 0
 accel_threshold = 5
+magnitude_lpf = 0.1
 expected_interval = 1
 average_interval = 1
 
@@ -54,17 +55,19 @@ def update_pos(pos, fps):
             if len(acc_history) < 3:
                 acc_history.append(acc)
                 return
-            update_acceleration(acc, calculate_magnitude(vel))
+            acc_magnitude = (calculate_magnitude(vel_history[-1]) - calculate_magnitude(vel_history[-2]))
+            avg_velo = calculate_average_vector(vel_history)
+            update_acceleration(acc, acc_magnitude, calculate_magnitude(avg_velo))
 
 
-def update_acceleration(acc, velo):
-    global last_beat_time, peak_velo, accel_lpf, accel_threshold, velo_lpf, average_interval, expected_interval
+def update_acceleration(acc, magnitude_acc, velo):
+    global last_beat_time, peak_velo, accel_lpf, accel_threshold, velo_lpf, average_interval, expected_interval, magnitude_lpf
     acc_history.append(acc)
     avg_accel = avg_magnitude(acc_history)
 
-    accel_lpf_before = accel_lpf
     accel_lpf = update_lpf(accel_lpf, avg_accel, ALPHA1)
     accel_threshold = update_lpf(accel_threshold, avg_accel, ALPHA2)
+    magnitude_lpf = update_lpf(magnitude_lpf, magnitude_acc, 0.12)
 
     avg_velo = avg_magnitude(vel_history)
     max_velo = min(velo_lpf, peak_velo * PEAK_FACTOR)
@@ -85,10 +88,10 @@ def update_acceleration(acc, velo):
     if avg_velo > peak_velo: peak_velo = avg_velo
 
     confidence = 1
-    confidence *= asymmetric_sigmoid(interval / average_interval, k1=1.5, k2=0.1)
-    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=5, k2=0.5)
-    confidence *= asymmetric_sigmoid(accel_lpf_before / calculate_magnitude(acc), k1=1, k2=0.05)
-    confidence *= asymmetric_sigmoid(max_velo / velo, k1=3, k2=0.25)
+    confidence *= asymmetric_sigmoid(interval / average_interval, k1=1, k2=0.1)
+    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=5, k2=0.2)
+    confidence *= asymmetric_sigmoid(1 - magnitude_lpf, k1=3, k2=1)
+    confidence *= asymmetric_sigmoid(max_velo / velo, k1=3, k2=3)
     confidence_list.append(confidence * CONFIDENCE_MULT)
 
     if confidence >= MIN_CONFIDENCE:

@@ -13,6 +13,9 @@ def compute_acceleration(vel1, vel2, time_delta):
         return [0.0, 0.0]
     return [(v2 - v1) / time_delta for v1, v2 in zip(vel1, vel2)]
 
+def calculate_average_vector(source):
+    n = len(source)
+    return [sum(v[0] for v in source) / n, sum(v[1] for v in source) / n]
 
 def calculate_magnitude(vector):
     return (vector[0] ** 2 + vector[1] ** 2) ** 0.5
