@@ -17,8 +17,6 @@ def plot_acceleration():
     for beat_time in beat_times:
         plt.axvline(x=beat_time, color='black', alpha=0.5, linestyle='--')
 
-    plt.ylim(0, 25)
-
     plt.xlabel('Sample')
     plt.ylabel('Acceleration Magnitude')
     plt.title('Acceleration Over Time')
@@ -82,7 +80,7 @@ def update_pos(pos):
 
 velo_lpf = 0.25
 alpha1 = 0.8
-alpha2 = 0.1
+alpha2 = 0.2
 alpha3 = 0.03
 
 maxlen = 3
@@ -133,21 +131,20 @@ def update_acceleration(acc, velo):
     accel_lpf2_list.append(accel_lpf2)
     threshold_list.append(accel_lpf3)
 
+    if time.time() - last_beat_time < min_interval: return
+
     magnitude = calculate_magnitude(acc)
-    if avg_velo >= velo_threshold:
-        if peak_velo != 0:
-            peak_velo = 0
-            print("reset")
+    if avg_velo > peak_velo and avg_velo > velo_threshold:
+        peak_velo = avg_velo
+        print(f"peak_velo = {peak_velo}")
     if accel_lpf1 >= accel_threshold * 1.5 and magnitude < accel_lpf2_before:
-        if peak_velo != 0:
-            print("not reset yet")
+        if velo > peak_velo / 5:
+            print(f"{velo:.2f} > {peak_velo / 5:.2f}")
             return
         if velo >= velo_threshold:
             print(f"{velo:.2f} > {velo_threshold:.2f}")
             return
-        if time.time() - last_beat_time <= min_interval:
-            return
-        peak_velo = 1
+        peak_velo = 0
         detected_beat(avg_accel, velo)
 
 
