@@ -16,60 +16,36 @@ SynthDef(\click) {
 SynthDef(\vst_instr) {
 	var snd = VSTPlugin.ar(nil, 2);
 	Out.ar(0, snd);
-}.add
+}.add;
+
+SynthDef(\blip) {
+	var snd = SinOsc.ar(\freq.kr(440));
+	snd = snd * Env.perc(0.02, 0.2, \amp.kr(0.1)).kr(Done.freeSelf);
+	snd = Pan2.ar(snd, \pan.kr(0));
+	Out.ar(0, snd);
+}.add;
 )
 
-VSTPlugin.search
-
-(
-fork {
-	x.free;
-	x = Synth(\vst_instr);
-	s.sync;
-	~labs = VSTPluginController(x).open('LABS');
-	s.sync;
-	~labs.editor;
-}
-)
-
-(fork {
-	for(0, 48) { |i|
-		i.postln;
-		~labs.set(i, 1);
-		0.5.wait;
-	}
-})
-
-Synth(\click)
-
-~labs.midi.noteOn(0, 50)
+Synth(\blip)
 
 ~pitch = 60;
 
 (
 OSCdef(\beat, { |msg|
-	var data = msg[1..], magn;
-	magn = data[0];
+	var data = msg[1..], amp;
+	amp = data[0].linlin(20, 200, 0.1, 1);
 	"beat".postln;
-	fork {
-		~labs.midi.noteOn(0, ~pitch, magn.linlin(50, 200, 10, 127));
-		0.3.wait;
-		~labs.midi.noteOff(0, 60)
-	}
-	//Synth(\click, [amp: 5])
+	Synth(\blip, [amp: amp, freq: ~pitch.midicps])
 }, \beat);
-)
 
-(
 OSCdef(\left_hand, { |msg|
 	var data = msg[1..], x, y, fx;
-	data.postln;
+	//data.postln;
 	if (data.size == 2) {
-		y = data[1];
-		~pitch = y.linlin(0, 1, 40, 80).postln;
 		x = data[0];
-		fx = x.linlin(0, 0.5, 0, 1).postln;
-		~labs.set(17, fx);
+		~pan = x.linlin(0, 1, -1, 1);
+		y = data[1];
+		~pitch = y.linlin(0, 1, 40, 80);
 	}
 }, \left_hand);
 )

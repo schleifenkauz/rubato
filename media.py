@@ -1,8 +1,7 @@
 import cv2
 import mediapipe as mp
 from mediapipe.python.solutions.drawing_utils import DrawingSpec
-from local_config import get_video_source, output_file_name
-import numpy as np
+from local_config import get_video_source, get_output_file_name
 from util import calculate_average_point
 
 def draw_circle(target, point, radius, color):
