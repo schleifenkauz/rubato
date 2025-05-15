@@ -43,7 +43,8 @@ pose = mp_pose.Pose(
     min_tracking_confidence=0.5
 )
 
-cap = cv2.VideoCapture('/home/nikolaus/cloud/rubato/dirigieren - cut.mp4')
+#cap = cv2.VideoCapture('/home/nikolaus/cloud/rubato/dirigieren - cut.mp4')
+cap = cv2.VideoCapture(0)
 
 fps = cap.get(cv2.CAP_PROP_FPS)
 
@@ -64,24 +65,15 @@ def calculate_magnitude(vector):
 
 
 def update_pos(pos):
-    global last_beat_time
-    if time_history and (time.time() - time_history[-1]) < MIN_TIME_DELTA: return
-    time_history.append(time.time())
     pos_history.append(pos)
 
     if len(pos_history) == maxlen:
-        time_list = list(time_history)
-        time_deltas = []
-        for t1, t2 in zip(time_list[:-1], time_list[1:]):
-            delta = t2 - t1
-            time_deltas.append(max(delta, MIN_TIME_DELTA))
-
-        vel = compute_velocity(pos_history[-2], pos_history[-1], time_deltas[-1])
+        vel = compute_velocity(pos_history[-2], pos_history[-1], 1 / fps)
         vel_history.append(vel)
         velo_list.append(calculate_magnitude(vel))
 
-        if len(vel_history) >= 2 and len(time_deltas) >= 2:
-            acc = compute_acceleration(vel_history[-2], vel_history[-1], time_deltas[-2])
+        if len(vel_history) >= 2:
+            acc = compute_acceleration(vel_history[-2], vel_history[-1], 1 / fps)
             if len(acc_history) < 3:
                 acc_history.append(acc)
                 return
@@ -91,9 +83,9 @@ def update_pos(pos):
 velo_lpf = 0.25
 alpha1 = 0.8
 alpha2 = 0.1
-alpha3 = 0.01
+alpha3 = 0.03
 
-maxlen = 5
+maxlen = 3
 pos_history = deque(maxlen=maxlen)
 vel_history = deque(maxlen=maxlen)
 acc_history = deque(maxlen=maxlen)
@@ -109,42 +101,45 @@ beats = []
 last_beat_time = 0
 min_interval = 0.4  # Minimum time between beats (in seconds)
 MIN_TIME_DELTA = 0.001  # Minimum allowed time delta
-last_peak = 0
+peak_velo = 0
 
 accel_lpf1 = 0
 accel_lpf2 = 0
-threshold = 5
+accel_lpf3 = 5
 
 def update_lpf(now, value, alpha):
     return alpha * value + (1 - alpha) * now
 
-def avg(source):
+def avg_magnitude(source):
     return sum(calculate_magnitude(v) for v in source) / len(source)
 
 def update_acceleration(acc, velo):
-    global last_beat_time, last_peak, accel_lpf1, accel_lpf2, threshold, velo_lpf
+    global last_beat_time, peak_velo, accel_lpf1, accel_lpf2, accel_lpf3, velo_lpf
     acc_history.append(acc)
-    avg_accel = avg(acc_history)
+    avg_accel = avg_magnitude(acc_history)
 
     accel_lpf1 = update_lpf(accel_lpf1, avg_accel, alpha1)
     accel_lpf2_before = accel_lpf2
     accel_lpf2 = update_lpf(accel_lpf2, avg_accel, alpha2)
-    threshold = update_lpf(threshold, avg_accel, alpha3)
+    accel_threshold = min(accel_lpf2, 3)
+    accel_lpf3 = update_lpf(accel_lpf3, avg_accel, alpha3)
 
-    velo_threshold = velo_lpf / 3
+    avg_velo = avg_magnitude(vel_history)
+
+    velo_threshold = max(velo_lpf / 1, 0.1)
     velo_lpf = update_lpf(velo_lpf, velo, alpha3)
 
     accel_lpf1_list.append(accel_lpf1)
     accel_lpf2_list.append(accel_lpf2)
-    threshold_list.append(threshold)
+    threshold_list.append(accel_lpf3)
 
-    if accel_lpf1 * 1.5 <= threshold:
-        if last_peak != 0:
-            last_peak = 0
-            print("reset")
     magnitude = calculate_magnitude(acc)
-    if accel_lpf1 * 1.5 >= threshold and magnitude < accel_lpf2_before:
-        if last_peak != 0:
+    if avg_velo >= velo_threshold:
+        if peak_velo != 0:
+            peak_velo = 0
+            print("reset")
+    if accel_lpf1 >= accel_threshold * 1.5 and magnitude < accel_lpf2_before:
+        if peak_velo != 0:
             print("not reset yet")
             return
         if velo >= velo_threshold:
@@ -152,7 +147,7 @@ def update_acceleration(acc, velo):
             return
         if time.time() - last_beat_time <= min_interval:
             return
-        last_peak = 1
+        peak_velo = 1
         detected_beat(avg_accel, velo)
 
 
@@ -185,7 +180,7 @@ while cap.isOpened():
     if not success:
         break
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    image = cv2.resize(image, (640, 360))
+    #image = cv2.resize(image, (640, 360))
     results = pose.process(image)
 
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
