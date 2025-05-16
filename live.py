@@ -94,7 +94,7 @@ def update_acceleration(acc, magnitude_acc, velo):
 
     confidence = 1
     confidence *= asymmetric_sigmoid(interval / average_interval, k1=0.5, k2=0.25)
-    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold, k1=3, k2=1)
+    confidence *= asymmetric_sigmoid(accel_lpf / accel_threshold * 1.5, k1=3, k2=1)
     confidence *= asymmetric_sigmoid(1 - magnitude_lpf, k1=2, k2=8)
     confidence *= asymmetric_sigmoid(max_velo / velo_lpf2, k1=2, k2=3)
     confidence_list.append(confidence * CONFIDENCE_MULT)
@@ -131,7 +131,7 @@ def plot_data():
     plt.title('Acceleration Over Time')
     plt.ylim(0, 20)
     plt.legend()
-    plt.show()
+    # plt.show()
 
     plt.figure(figsize=(20, 10))
     plt.plot(tempo_list, label='Tempo')
@@ -144,5 +144,5 @@ def plot_data():
 
 if __name__ == "__main__":
     last_beat_time = time.time()
-    analyze_video(update_pos, show_video=True)
+    analyze_video("pose", update_pos, show_video=True)
     plot_data()
