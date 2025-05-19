@@ -3,6 +3,8 @@ import mediapipe as mp
 from mediapipe.python.solutions.drawing_utils import DrawingSpec
 from local_config import get_video_source, get_output_file_name
 from util import calculate_average_point
+from gestures import is_fist
+
 
 def draw_circle(target, point, radius, color):
     h, w, _ = target.shape
@@ -10,7 +12,6 @@ def draw_circle(target, point, radius, color):
     py = int(point[1] * h)
 
     cv2.circle(target, (px, py), radius, color, thickness=-1)
-
 
 mp_pose = mp.solutions.pose
 mp_hands = mp.solutions.hands
@@ -49,19 +50,24 @@ def analyze_video(option, analyze_frame, show_video):
         if output_filename:
             out.write(image)
 
-        if option == "hands":
-            results = hands.process(image)
+        
+        hand_results = hands.process(image)
+        is_hand_fist = False
+        if hand_results.multi_hand_landmarks and hand_results.multi_handedness:
+            for i, hand_landmarks in enumerate(hand_results.multi_hand_landmarks):
+                if hand_results.multi_handedness[i].classification[0].label == "Left":
+                    is_hand_fist = False #is_fist(hand_landmarks)
+                    message = f"Hand is {'fist' if is_hand_fist else 'open'}"
+                    mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                    #cv2.putText(image, message, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-            if results.multi_hand_landmarks and results.multi_handedness:
-                for i, hand_landmarks in enumerate(results.multi_hand_landmarks):
-                    if results.multi_handedness[i].classification[0].label == "Left":
-                        mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-
+                    if option == "hands" and not is_hand_fist:
                         right_hand = calculate_average_point(hand_landmarks.landmark)
                         analyze_frame(right_hand, [0, 0], fps)
-            else :
-                print("No hands detected")
-        elif option == "pose":
+        else :
+            None
+            #cv2.putText(image, "No hand detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        if option == "pose" and not is_hand_fist:
             results = pose.process(image)
             if results.pose_landmarks:
                 landmarks = results.pose_landmarks

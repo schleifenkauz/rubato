@@ -45,7 +45,9 @@ OSCdef(\left_hand, { |msg|
 		x = data[0];
 		~pan = x.linlin(0, 1, -1, 1);
 		y = data[1];
-		~pitch = y.linlin(0, 1, 40, 80);
+		~pitch = y.linlin(0, 1, 50, 90);
 	}
 }, \left_hand);
 )
+
+s.quit
