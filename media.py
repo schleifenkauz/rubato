@@ -32,7 +32,7 @@ def analyze_video(option, analyze_frame, show_video):
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"Starting to analyze video. [{width} x ${height}] FPS: {fps}")
+    print(f"Starting to analyze video. [{width} x {height}] FPS: {fps}")
 
     output_filename = get_output_file_name()
 

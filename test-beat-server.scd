@@ -1,6 +1,6 @@
 NetAddr.langPort
 
-OSCdef.trace(false, true)
+OSCdef.trace(false)
 
 s.reboot
 

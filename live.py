@@ -4,8 +4,8 @@ from pythonosc import udp_client
 import matplotlib.pyplot as plt
 from util import *
 from media import analyze_video
-
-osc_client = udp_client.SimpleUDPClient("127.0.0.1", 57120)
+import argparse
+from threading import Timer
 
 # Constants
 ALPHA1 = 0.25
@@ -42,7 +42,12 @@ magnitude_lpf = 0.1
 expected_interval = 1
 average_interval = 1
 
+start_time = 0
+
 def update_pos(right_hand, left_hand, fps):
+    if time.time() < start_time:
+        return
+
     pos_history.append(right_hand)
 
     if len(pos_history) == maxlen:
@@ -56,13 +61,15 @@ def update_pos(right_hand, left_hand, fps):
                 acc_history.append(acc)
                 return
             acc_magnitude = (calculate_magnitude(vel_history[-1]) - calculate_magnitude(vel_history[-2]))
-            #avg_velo = calculate_average_vector(vel_history)
+            # avg_velo = calculate_average_vector(vel_history)
             update_acceleration(acc, acc_magnitude, calculate_magnitude(vel))
-    
+
     left_hand[1] = 1 - left_hand[1]
-    osc_client.send_message("/left_hand", left_hand)
+    # osc_client.send_message("/left_hand", left_hand)
+
 
 velo_lpf2 = 0.2
+
 
 def update_acceleration(acc, magnitude_acc, velo):
     global last_beat_time, peak_velo, accel_lpf, accel_threshold, velo_lpf, average_interval, expected_interval, magnitude_lpf, velo_lpf2
@@ -85,6 +92,7 @@ def update_acceleration(acc, magnitude_acc, velo):
     tempo_list.append(60 / average_interval)
 
     current_time = time.time()
+
     interval = current_time - last_beat_time
     if interval < MIN_INTERVAL:
         confidence_list.append(0)
@@ -100,17 +108,18 @@ def update_acceleration(acc, magnitude_acc, velo):
     confidence_list.append(confidence * CONFIDENCE_MULT)
 
     if confidence >= MIN_CONFIDENCE:
-        detected_beat(accel_lpf, velo_lpf2)
+        detected_beat(accel_lpf, velo_lpf2, current_time)
         last_beat_time = current_time
         average_interval = update_lpf(average_interval, interval, TEMPO_ALPHA)
         peak_velo = 0
 
 
-def detected_beat(magnitude, vel_magn):
+def detected_beat(magnitude, vel_magn, current_time):
     beats.append(min(magnitude, 35))
     beat_times.append(len(peak_velo_list))
-    print(f"Beat at {time.time():.2f}s: magnitude = {magnitude:.2f}, velo = {vel_magn:.2f}")
-    osc_client.send_message("/beat", magnitude)
+    # print(f"Beat at {time.time():.2f}s: magnitude = {magnitude:.2f}, velo = {vel_magn:.2f}", flush=True)
+    timestamp = int(current_time * 1000)
+    osc_client.send_message("/beat", [timestamp, magnitude, vel_magn])
 
 
 def plot_data():
@@ -141,8 +150,42 @@ def plot_data():
     plt.ylim(0, 120)
     # plt.show()
 
+def send_started():
+    print("Sending /started message...", flush=True)
+    osc_client.send_message("/started", [])
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Live beat detection.')
+    parser.add_argument(
+        '--show-video', action='store_true',
+        help='Enable video display'
+    )
+    parser.add_argument(
+        '--udp-port', '-u', type=int, required=True,
+        help='UDP port to send OSC messages to'
+    )
+    parser.add_argument(
+        '--start-at', type=float, required=False, default=0,
+        help='Start beat detection at a specific time'
+    )
+
+    args = parser.parse_args()
+    start_time = args.start_at
+
+    print(f"Starting live beat detection in at {start_time}.")
+    print(f"Sending OSC messages to address 127.0.0.1:{args.udp_port}.", flush=True)
+    osc_client = udp_client.SimpleUDPClient("127.0.0.1", args.udp_port)
+
+    if start_time > 0:
+        delta_t = start_time - time.time()
+        print(f"Waiting {delta_t:.2f} seconds before starting...", flush=True)
+        Timer(delta_t, send_started).start()
+    else:
+        send_started()
+
     last_beat_time = time.time()
-    analyze_video("pose", update_pos, show_video=True)
-    plot_data()
+    analyze_video("pose", update_pos, show_video=args.show_video)
+
+    osc_client.send_message("/exited", [])
+
+    # plot_data()
