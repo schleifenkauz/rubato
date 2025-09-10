@@ -27,6 +27,11 @@ hands = mp_hands.Hands(
     min_tracking_confidence=0.2
 )
 
+# Analyze a video with media-pipe and feed the results into [analyze_frame].
+# [option] can be either "hands" or "pose". This decides which media-pipe model is used for the analysis.
+# If [show_video] is True the each frame is shown on the screen with the detected landmarks overlayed.
+#
+# This function probably doesn't have to be modified. It acts only as a wrapper around the passed [analyze_frame] function which does the real work. 
 def analyze_video(option, analyze_frame, show_video):
     cap = get_video_source()
     fps = cap.get(cv2.CAP_PROP_FPS)
