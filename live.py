@@ -1,19 +1,21 @@
 import time
 from collections import deque
 from pythonosc import udp_client
-import matplotlib.pyplot as plt
 from util import *
 from media import analyze_video
+from plotting import plot_data
 import argparse
 from threading import Timer
 
 # Constants
-ALPHA1 = 0.25
-ALPHA2 = 0.03
-TEMPO_ALPHA = 0.35
+ALPHA1 = 0.25  # smoothing factor for the wrist acceleration
+ALPHA2 = 0.03  # smoothing factor for the wrist acceleration threshold
+ALPHA3 = 0.12  # smoothing factor
+ALPHA4 = 0.5
+TEMPO_ALPHA = 0.35  # smoothing factor for the tempo
 MIN_CONFIDENCE = 0.9
 CONFIDENCE_MULT = 10
-MIN_INTERVAL = 0.4
+MIN_INTERVAL = 0.4  # minimum interval between detected beats
 PEAK_FACTOR = 0.25
 
 maxlen = 3
@@ -43,6 +45,7 @@ expected_interval = 1
 average_interval = 1
 
 start_time = 0
+
 
 def update_pos(right_hand, left_hand, fps):
     if time.time() < start_time:
@@ -78,12 +81,12 @@ def update_acceleration(acc, magnitude_acc, velo):
 
     accel_lpf = update_lpf(accel_lpf, avg_accel, ALPHA1)
     accel_threshold = update_lpf(accel_threshold, avg_accel, ALPHA2)
-    magnitude_lpf = update_lpf(magnitude_lpf, magnitude_acc, 0.12)
+    magnitude_lpf = update_lpf(magnitude_lpf, magnitude_acc, ALPHA3)
 
     avg_velo = avg_magnitude(vel_history)
     max_velo = min(velo_lpf, peak_velo * PEAK_FACTOR)
     velo_lpf = update_lpf(velo_lpf, velo, ALPHA2)
-    velo_lpf2 = update_lpf(velo_lpf2, velo, 0.5)
+    velo_lpf2 = update_lpf(velo_lpf2, velo, ALPHA4)
 
     accel_lpf_list.append(accel_lpf)
     threshold_list.append(accel_threshold)
@@ -122,37 +125,10 @@ def detected_beat(magnitude, vel_magn, current_time):
     osc_client.send_message("/beat", [timestamp, magnitude, vel_magn])
 
 
-def plot_data():
-    # Plotting
-    plt.figure(figsize=(20, 10))
-    plt.plot(accel_lpf_list, label=f"Acceleration (alpha={ALPHA1})")
-    plt.plot(threshold_list, label=f"Acceleration Threshold (alpha={ALPHA2})")
-    plt.plot(velo_list, label='Velocity')
-    plt.plot(peak_velo_list, label='Peak Velocity')
-    plt.plot(velo_threshold_list, label='Velocity Threshold')
-    # plt.plot(confidence_list, label='Confidence', scaley=False)
-    # plt.axhline(y=MIN_CONFIDENCE * CONFIDENCE_MULT, color='red', linestyle='--', label='Minimum Confidence')
-    # plt.scatter(beat_times, beats, label='Beats', color='black')
-    for beat_time in beat_times:
-        plt.axvline(x=beat_time, color='black', alpha=0.5, linestyle='--')
-    plt.xlabel('Sample')
-    plt.ylabel('Acceleration Magnitude')
-    plt.title('Acceleration Over Time')
-    plt.ylim(0, 20)
-    plt.legend()
-    # plt.show()
-
-    plt.figure(figsize=(20, 10))
-    plt.plot(tempo_list, label='Tempo')
-    plt.xlabel('Sample')
-    plt.ylabel('Tempo')
-    plt.title('Tempo Over Time')
-    plt.ylim(0, 120)
-    # plt.show()
-
 def send_started():
     print("Sending /started message...", flush=True)
     osc_client.send_message("/started", [])
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Live beat detection.')
@@ -167,6 +143,14 @@ if __name__ == "__main__":
     parser.add_argument(
         '--start-at', type=float, required=False, default=0,
         help='Start beat detection at a specific time'
+    )
+    parser.add_argument(
+        '--model', '-m', type=str, required=False, default="hands",
+        help='Media-pipe model to use for analysis'
+    )
+    parser.add_argument(
+        '--model-complexity', '-c', type=int, required=False, default=1,
+        help='Media-pipe model complexity level'
     )
 
     args = parser.parse_args()
@@ -184,8 +168,14 @@ if __name__ == "__main__":
         send_started()
 
     last_beat_time = time.time()
-    analyze_video("pose", update_pos, show_video=args.show_video)
+    model = args.model
+    complexity = args.model_complexity
+    analyze_video(model, complexity, update_pos, show_video=args.show_video)
 
     osc_client.send_message("/exited", [])
 
-    # plot_data()
+    # plot_data(
+    #     accel_lpf_list, threshold_list, velo_list, peak_velo_list, velo_threshold_list,
+    #     tempo_list, beat_times,
+    #     ALPHA1, ALPHA2,
+    # )
