@@ -1,9 +1,9 @@
 import cv2
 import mediapipe as mp
 from mediapipe.python.solutions.drawing_utils import DrawingSpec
-from local_config import get_video_source, get_output_file_name
+
+from local_config import get_output_file_name
 from util import calculate_average_point
-from gestures import is_fist
 
 
 def draw_circle(target, point, radius, color):
@@ -23,7 +23,7 @@ mp_drawing = mp.solutions.drawing_utils  # Add drawing utilities
 # If [show_video] is True the each frame is shown on the screen with the detected landmarks overlayed.
 #
 # This function probably doesn't have to be modified. It acts only as a wrapper around the passed [analyze_frame] function which does the real work. 
-def analyze_video(option, complexity, analyze_frame, show_video):
+def analyze_video(cap, option, analyze_frame, complexity=1, show_video=True, output_filename=None):
     if option == "hands":
         hands = mp_hands.Hands(
             static_image_mode=True,
@@ -42,13 +42,10 @@ def analyze_video(option, complexity, analyze_frame, show_video):
         print(f"Invalid option '{option}'. Must be either 'hands' or 'pose'.")
         return
 
-    cap = get_video_source()
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"Starting to analyze video. [{width} x {height}] FPS: {fps}")
-
-    output_filename = get_output_file_name()
 
     if output_filename:
         fourcc = cv2.VideoWriter_fourcc(*'XVID')

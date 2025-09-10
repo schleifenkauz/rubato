@@ -1,5 +1,7 @@
 import time
 from collections import deque
+
+import cv2
 from pythonosc import udp_client
 from util import *
 from media import analyze_video
@@ -145,12 +147,20 @@ if __name__ == "__main__":
         help='Start beat detection at a specific time'
     )
     parser.add_argument(
-        '--model', '-m', type=str, required=False, default="hands",
+        '--model', '-m', type=str, required=False, default="pose",
         help='Media-pipe model to use for analysis'
     )
     parser.add_argument(
         '--model-complexity', '-c', type=int, required=False, default=1,
         help='Media-pipe model complexity level'
+    )
+    parser.add_argument(
+        '--output-file', '-o', type=str, required=False, default=None,
+        help='Video output file name'
+    )
+    parser.add_argument(
+        '--input-file', '-i', type=str, required=False, default=None,
+        help='Video input file name. If not specified the webcam is used.'
     )
 
     args = parser.parse_args()
@@ -170,7 +180,14 @@ if __name__ == "__main__":
     last_beat_time = time.time()
     model = args.model
     complexity = args.model_complexity
-    analyze_video(model, complexity, update_pos, show_video=args.show_video)
+    if args.input_file:
+        cap = cv2.VideoCapture(args.input_file)
+    else:
+        cap = cv2.VideoCapture(0)
+    analyze_video(
+        cap, model, update_pos, complexity,
+        show_video=args.show_video, output_filename=args.output_file
+    )
 
     osc_client.send_message("/exited", [])
 

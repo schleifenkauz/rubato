@@ -1,4 +1,5 @@
 .venv
 # local_config.py
 __pycache__
+data2
 data
